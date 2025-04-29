@@ -1,278 +1,194 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8" />
+  <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Workout Trainer</title>
   <style>
-    body {
-      font-family: sans-serif;
-      background: #111;
-      color: #0f0;
-      padding: 2rem;
-    }
+    body { font-family: sans-serif; background: #111; color: #0f0; padding: 2rem; }
     .hidden { display: none; }
     .screen { display: none; }
     .screen.active { display: block; }
-    #log {
-      white-space: pre-wrap;
-      background: #000;
-      padding: 1rem;
-      border-radius: 5px;
-      max-height: 30vh;
-      overflow-y: scroll;
-      border: 1px solid #0f0;
-      margin-top: 1rem;
-    }
-    #grid {
-      display: grid;
-      grid-template-columns: repeat(4, 80px);
-      grid-template-rows: repeat(8, 80px);
-      gap: 10px;
-      margin-top: 1rem;
-    }
-    .tile {
-      width: 80px;
-      height: 80px;
-      background-color: #333;
-      border: 2px solid #0f0;
-      box-sizing: border-box;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 18px;
-      font-weight: bold;
-    }
-    button {
-      padding: 10px 20px;
-      font-size: 16px;
-      margin: 0.5rem;
-      background: #0f0;
-      color: #000;
-      border: none;
-      cursor: pointer;
-    }
-    #ble-status {
-      margin-top: 0.5rem;
-      font-weight: bold;
-    }
-    #latency-display {
-      position: fixed;
-      top: 10px;
-      right: 10px;
-      background: #000;
-      color: #0f0;
-      padding: 10px;
-      border-radius: 5px;
-      border: 1px solid #0f0;
-      font-size: 14px;
-    }
-    @media (max-width: 600px) {
-      #grid {
-        grid-template-columns: repeat(4, 60px);
-        grid-template-rows: repeat(8, 60px);
-      }
-      .tile {
-        width: 60px;
-        height: 60px;
-        font-size: 14px;
-      }
-    }
+    #log { white-space: pre-wrap; background: #000; padding: 1rem; border-radius: 5px; max-height: 30vh; overflow-y: scroll; border: 1px solid #0f0; margin-top: 1rem; }
+    #grid { display: grid; grid-template-columns: repeat(4, 80px); grid-template-rows: repeat(8, 80px); gap: 10px; margin-top: 1rem; }
+    .tile { width: 80px; height: 80px; background-color: #333; border: 2px solid #0f0; box-sizing: border-box; display: flex; align-items: center; justify-content: center; font-size: 18px; font-weight: bold; }
+    button { padding: 10px 20px; font-size: 16px; margin: 0.5rem; background: #0f0; color: #000; border: none; cursor: pointer; }
+    #ble-status { margin-top: 0.5rem; font-weight: bold; }
+    #latency-display { position: fixed; top: 10px; right: 10px; background: #000; color: #0f0; padding: 10px; border-radius: 5px; border: 1px solid #0f0; font-size: 14px; }
+    @media (max-width: 600px) { #grid { grid-template-columns: repeat(4, 60px); grid-template-rows: repeat(8, 60px); } .tile { width: 60px; height: 60px; font-size: 14px; } }
   </style>
 </head>
 <body>
-  <div id="latency-display">Latency: -- ms</div>
+<div id="latency-display">Latency: -- ms</div>
+<div id="screen-landing" class="screen active">
+  <h1>Workout Therapy</h1>
+  <button onclick="goToScreen('select')">Start</button>
+</div>
+<div id="screen-select" class="screen">
+  <h1>Select a Routine</h1>
+  <select id="routineSelect"></select><br>
+  <button onclick="connectBLE()">Connect BLE</button>
+  <button onclick="startRoutine()">Start Routine</button>
+  <p id="ble-status">🔴 Not Connected</p>
+</div>
+<div id="screen-workout" class="screen">
+  <h1>Workout in Progress</h1>
+  <div id="grid"></div>
+  <div id="log"></div>
+  <button onclick="connectBLE()">Reconnect BLE</button>
+</div>
+<div id="screen-results" class="screen">
+  <h1>Workout Complete!</h1>
+  <div id="results"></div>
+  <button onclick="goToScreen('landing')">Back to Home</button>
+</div>
 
-  <div id="screen-landing" class="screen active">
-    <h1>Workout Therapy</h1>
-    <button onclick="goToScreen('select')">Start</button>
-  </div>
+<script>
+const SCREENS = ['landing', 'select', 'workout', 'results'];
+const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
+const CHARACTERISTIC_UUID = 'abcd1234-5678-90ab-cdef-1234567890ab';
+const routines = [
+  'Quick Reflexes', 'Cross Tap', 'Box Hop', 'Balance Builder',
+  'Fast Feet', 'Agility Mix', 'Speed Shuffle', 'Side Sprints',
+  'Endurance Step', 'Power Moves'
+];
 
-  <div id="screen-select" class="screen">
-    <h1>Select a Routine</h1>
-    <select id="routineSelect"></select><br>
-    <button onclick="connectBLE()">Connect BLE</button>
-    <button onclick="startRoutine()">Start Routine</button>
-    <p id="ble-status">🔴 Not Connected</p>
-  </div>
+let characteristic;
+let device = null;
+let tiles = [];
+let currentStep = null;
+let pingStartTime = null;
 
-  <div id="screen-workout" class="screen">
-    <h1>Workout in Progress</h1>
-    <div id="grid"></div>
-    <div id="log"></div>
-    <button onclick="connectBLE()">Reconnect BLE</button>
-  </div>
+function goToScreen(name) {
+  SCREENS.forEach(s => document.getElementById('screen-' + s).classList.remove('active'));
+  document.getElementById('screen-' + name).classList.add('active');
+}
 
-  <div id="screen-results" class="screen">
-    <h1>Workout Complete!</h1>
-    <div id="results"></div>
-    <button onclick="goToScreen('landing')">Back to Home</button>
-  </div>
-
-  <script>
-    const SCREENS = ['landing', 'select', 'workout', 'results'];
-    const SERVICE_UUID = '12345678-1234-1234-1234-1234567890ab';
-    const CHARACTERISTIC_UUID = 'abcd1234-5678-90ab-cdef-1234567890ab';
-    const routines = [
-      'Quick Reflexes', 'Cross Tap', 'Box Hop', 'Balance Builder',
-      'Fast Feet', 'Agility Mix', 'Speed Shuffle', 'Side Sprints',
-      'Endurance Step', 'Power Moves'
-    ];
-
-    let characteristic;
-    let device = null;
-    let tiles = [];
-    let currentStep = null;
-
-    let espSync = { browser: null, espBase: null };
-
-    function goToScreen(name) {
-      SCREENS.forEach(s => {
-        document.getElementById('screen-' + s).classList.remove('active');
-      });
-      document.getElementById('screen-' + name).classList.add('active');
+window.onload = () => {
+  const grid = document.getElementById('grid');
+  for (let col = 0; col < 4; col++) {
+    for (let row = 0; row < 8; row++) {
+      const sensorId = col * 8 + row;
+      const tile = document.createElement('div');
+      tile.className = 'tile';
+      tile.id = 'tile' + sensorId;
+      tile.textContent = sensorId;
+      tile.style.gridRow = (row + 1);
+      tile.style.gridColumn = (col + 1);
+      grid.appendChild(tile);
+      tiles[sensorId] = tile;
     }
+  }
+  const sel = document.getElementById('routineSelect');
+  routines.forEach((name, idx) => {
+    let opt = document.createElement('option');
+    opt.value = idx;
+    opt.innerText = name;
+    sel.appendChild(opt);
+  });
+};
 
-    window.onload = () => {
-      const grid = document.getElementById('grid');
-      for (let col = 0; col < 4; col++) {
-        for (let row = 0; row < 8; row++) {
-          const sensorId = col * 8 + row;
-          const tile = document.createElement('div');
-          tile.className = 'tile';
-          tile.id = 'tile' + sensorId;
-          tile.textContent = sensorId;
-          tile.style.gridRow = (row + 1);
-          tile.style.gridColumn = (col + 1);
-          grid.appendChild(tile);
-          tiles[sensorId] = tile;
+function log(text) {
+  const logDiv = document.getElementById('log');
+  logDiv.textContent += text + '\n';
+  logDiv.scrollTop = logDiv.scrollHeight;
+  handleMessage(text);
+}
+
+function resetTiles() { tiles.forEach(tile => tile.style.backgroundColor = '#333'); }
+function setTile(pos, color) { if (tiles[pos]) tiles[pos].style.backgroundColor = color; }
+
+function handleBLEStream(event) {
+  const now = Date.now();
+  const value = new TextDecoder().decode(event.target.value);
+
+  if (value.trim() !== '') {
+    if (value.trim() === "PONG") {
+      if (pingStartTime !== null) {
+        const roundTrip = Date.now() - pingStartTime;
+        const latency = Math.round(roundTrip / 2);
+        document.getElementById('latency-display').textContent = 'Latency: ' + latency + ' ms';
+        pingStartTime = null;
+      }
+    } else {
+      const parts = value.split('|');
+      if (parts.length >= 2) {
+        const message = parts.slice(1).join('|').trim();
+        if (message.includes('PRESSED CORRECTLY') || message.includes('INCORRECT PRESS')) {
+          pingStartTime = Date.now();
+          characteristic.writeValue(new TextEncoder().encode('PING'));
         }
-      }
-
-      const sel = document.getElementById('routineSelect');
-      routines.forEach((name, idx) => {
-        let opt = document.createElement('option');
-        opt.value = idx;
-        opt.innerText = name;
-        sel.appendChild(opt);
-      });
-    };
-
-    function log(text) {
-      const logDiv = document.getElementById('log');
-      logDiv.textContent += text + '\n';
-      logDiv.scrollTop = logDiv.scrollHeight;
-      handleMessage(text);
-    }
-
-    function resetTiles() {
-      tiles.forEach(tile => tile.style.backgroundColor = '#333');
-    }
-
-    function setTile(pos, color) {
-      if (tiles[pos]) tiles[pos].style.backgroundColor = color;
-    }
-
-    function handleBLEStream(event) {
-      const now = Date.now();
-      const value = new TextDecoder().decode(event.target.value);
-
-      if (value.trim() !== '') {
-        const parts = value.split('|');
-        if (parts.length >= 2) {
-          const espMillis = parseInt(parts[0]);
-          const message = parts.slice(1).join('|').trim();
-
-          // Only update latency for press events
-          if (message.includes('PRESSED CORRECTLY') || message.includes('INCORRECT PRESS')) {
-            if (espSync.espBase === null) {
-              espSync.espBase = espMillis;
-            }
-
-            const alignedESPTime = espMillis - espSync.espBase + espSync.browser;
-            const latency = now - alignedESPTime - 5000;
-            document.getElementById('latency-display').textContent = 'Latency: ' + latency + ' ms';
-          }
-
-          log(message);
-        } else {
-          log(value.trim());
-        }
-      }
-    }
-
-    function handleMessage(msg) {
-      const matchNext = msg.match(/Step on Sensor (\d+) now!/);
-      const matchCorrect = msg.match(/Sensor (\d+) PRESSED CORRECTLY/);
-      const matchWrong = msg.match(/Sensor (\d+) INCORRECT PRESS/);
-      const matchReleaseCorrect = msg.match(/Sensor (\d+) RELEASED CORRECTLY/);
-      const matchWrongRelease = msg.match(/RELEASED after incorrect press/);
-      const matchFinal = msg.match(/Workout complete: (\d+) correct, (\d+) mistakes, time = (\d+\.\d+)s/);
-
-      if (matchNext) {
-        resetTiles();
-        currentStep = parseInt(matchNext[1]);
-        setTile(currentStep, 'blue');
-      } else if (matchCorrect) {
-        const pos = parseInt(matchCorrect[1]);
-        setTile(pos, 'green');
-      } else if (matchWrong) {
-        const wrong = parseInt(matchWrong[1]);
-        setTile(wrong, 'red');
-        if (currentStep !== null) setTile(currentStep, 'blue');
-      } else if (matchReleaseCorrect || matchWrongRelease) {
-        resetTiles();
-        if (currentStep !== null) setTile(currentStep, 'blue');
-      } else if (matchFinal) {
-        const resDiv = document.getElementById('results');
-        resDiv.innerHTML = `
-          <p>✅ Correct Steps: ${matchFinal[1]}</p>
-          <p>❌ Mistakes: ${matchFinal[2]}</p>
-          <p>⏱️ Duration: ${matchFinal[3]} seconds</p>
-        `;
-        goToScreen('results');
-      }
-    }
-
-    function onDisconnected() {
-      document.getElementById("ble-status").innerText = '🔴 Disconnected';
-      log('🔴 BLE disconnected.');
-      characteristic = null;
-    }
-
-    async function connectBLE() {
-      try {
-        log('🔍 Requesting BLE device...');
-        device = await navigator.bluetooth.requestDevice({
-          filters: [{ name: 'ESP32-StepMat' }],
-          optionalServices: [SERVICE_UUID]
-        });
-        device.addEventListener('gattserverdisconnected', onDisconnected);
-        log('🔗 Connecting...');
-        const server = await device.gatt.connect();
-        espSync.browser = Date.now();
-        espSync.espBase = null;
-        const service = await server.getPrimaryService(SERVICE_UUID);
-        characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
-        await characteristic.startNotifications();
-        characteristic.addEventListener('characteristicvaluechanged', handleBLEStream);
-        document.getElementById("ble-status").innerText = '🟢 Connected';
-        log('✅ Connected. Waiting for logs...');
-      } catch (error) {
-        log('Error: ' + error);
-        document.getElementById("ble-status").innerText = '🔴 Failed to Connect';
-      }
-    }
-
-    async function startRoutine() {
-      const routineIndex = document.getElementById('routineSelect').value;
-      if (characteristic) {
-        await characteristic.writeValue(new TextEncoder().encode('ROUTINE:' + routineIndex));
-        goToScreen('workout');
+        log(message);
       } else {
-        alert("Please connect to BLE first.");
+        log(value.trim());
       }
     }
-  </script>
+  }
+}
+
+function handleMessage(msg) {
+  const matchNext = msg.match(/Step on Sensor (\d+) now!/);
+  const matchCorrect = msg.match(/Sensor (\d+) PRESSED CORRECTLY/);
+  const matchWrong = msg.match(/Sensor (\d+) INCORRECT PRESS/);
+  const matchReleaseCorrect = msg.match(/Sensor (\d+) RELEASED CORRECTLY/);
+  const matchWrongRelease = msg.match(/RELEASED after incorrect press/);
+  const matchFinal = msg.match(/Workout complete: (\d+) correct, (\d+) mistakes, time = (\d+\.\d+)s/);
+
+  if (matchNext) {
+    resetTiles();
+    currentStep = parseInt(matchNext[1]);
+    setTile(currentStep, 'blue');
+  } else if (matchCorrect) {
+    const pos = parseInt(matchCorrect[1]);
+    setTile(pos, 'green');
+  } else if (matchWrong) {
+    const wrong = parseInt(matchWrong[1]);
+    setTile(wrong, 'red');
+    if (currentStep !== null) setTile(currentStep, 'blue');
+  } else if (matchReleaseCorrect || matchWrongRelease) {
+    resetTiles();
+    if (currentStep !== null) setTile(currentStep, 'blue');
+  } else if (matchFinal) {
+    const resDiv = document.getElementById('results');
+    resDiv.innerHTML = `<p>✅ Correct Steps: ${matchFinal[1]}</p><p>❌ Mistakes: ${matchFinal[2]}</p><p>⏱️ Duration: ${matchFinal[3]} seconds</p>`;
+    goToScreen('results');
+  }
+}
+
+function onDisconnected() {
+  document.getElementById("ble-status").innerText = '🔴 Disconnected';
+  log('🔴 BLE disconnected.');
+  characteristic = null;
+}
+
+async function connectBLE() {
+  try {
+    log('🔍 Requesting BLE device...');
+    device = await navigator.bluetooth.requestDevice({ filters: [{ name: 'ESP32-StepMat' }], optionalServices: [SERVICE_UUID] });
+    device.addEventListener('gattserverdisconnected', onDisconnected);
+    log('🔗 Connecting...');
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService(SERVICE_UUID);
+    characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
+    await characteristic.startNotifications();
+    characteristic.addEventListener('characteristicvaluechanged', handleBLEStream);
+    document.getElementById("ble-status").innerText = '🟢 Connected';
+    log('✅ Connected. Waiting for logs...');
+  } catch (error) {
+    log('Error: ' + error);
+    document.getElementById("ble-status").innerText = '🔴 Failed to Connect';
+  }
+}
+
+async function startRoutine() {
+  const routineIndex = document.getElementById('routineSelect').value;
+  if (characteristic) {
+    await characteristic.writeValue(new TextEncoder().encode('ROUTINE:' + routineIndex));
+    goToScreen('workout');
+  } else {
+    alert("Please connect to BLE first.");
+  }
+}
+</script>
 </body>
 </html>
