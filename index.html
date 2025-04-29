@@ -190,7 +190,7 @@
             }
 
             const alignedESPTime = espMillis - espSync.espBase + espSync.browser;
-            const latency = now - alignedESPTime;
+            const latency = now - alignedESPTime - 5000;
             document.getElementById('latency-display').textContent = 'Latency: ' + latency + ' ms';
           }
 
