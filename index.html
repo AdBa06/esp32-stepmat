@@ -1,8 +1,7 @@
-
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
+  <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Workout Trainer</title>
   <style>
@@ -68,7 +67,6 @@
       border: 1px solid #0f0;
       font-size: 14px;
     }
-    /* Mobile scaling */
     @media (max-width: 600px) {
       #grid {
         grid-template-columns: repeat(4, 60px);
@@ -89,6 +87,7 @@
     <h1>Workout Therapy</h1>
     <button onclick="goToScreen('select')">Start</button>
   </div>
+
   <div id="screen-select" class="screen">
     <h1>Select a Routine</h1>
     <select id="routineSelect"></select><br>
@@ -96,12 +95,14 @@
     <button onclick="startRoutine()">Start Routine</button>
     <p id="ble-status">🔴 Not Connected</p>
   </div>
+
   <div id="screen-workout" class="screen">
     <h1>Workout in Progress</h1>
     <div id="grid"></div>
     <div id="log"></div>
     <button onclick="connectBLE()">Reconnect BLE</button>
   </div>
+
   <div id="screen-results" class="screen">
     <h1>Workout Complete!</h1>
     <div id="results"></div>
@@ -117,10 +118,12 @@
       'Fast Feet', 'Agility Mix', 'Speed Shuffle', 'Side Sprints',
       'Endurance Step', 'Power Moves'
     ];
+
     let characteristic;
-    let tiles = [];
     let device = null;
+    let tiles = [];
     let currentStep = null;
+    let espStartTimeOffset = null;
 
     function goToScreen(name) {
       SCREENS.forEach(s => {
@@ -177,13 +180,19 @@
         const parts = value.split('|');
         if (parts.length >= 2) {
           const espMillis = parseInt(parts[0]);
-          const message = parts.slice(1).join('|'); // in case message itself has '|'
-          const transmissionLatency = now - espMillis;
-          document.getElementById('latency-display').textContent = 'Latency: ' + transmissionLatency + ' ms';
+          const message = parts.slice(1).join('|').trim();
 
-          log(message.trim());
+          // Only update latency if it's a press message
+          if (message.includes('PRESSED CORRECTLY') || message.includes('INCORRECT PRESS')) {
+            if (espStartTimeOffset !== null) {
+              const latency = now - (espMillis + espStartTimeOffset);
+              document.getElementById('latency-display').textContent = 'Latency: ' + latency + ' ms';
+            }
+          }
+
+          log(message);
         } else {
-          log(value.trim()); // fallback if no timestamp
+          log(value.trim());
         }
       }
     }
@@ -221,7 +230,7 @@
       }
     }
 
-    function onDisconnected(event) {
+    function onDisconnected() {
       document.getElementById("ble-status").innerText = '🔴 Disconnected';
       log('🔴 BLE disconnected.');
       characteristic = null;
@@ -237,6 +246,7 @@
         device.addEventListener('gattserverdisconnected', onDisconnected);
         log('🔗 Connecting...');
         const server = await device.gatt.connect();
+        espStartTimeOffset = Date.now();
         const service = await server.getPrimaryService(SERVICE_UUID);
         characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
         await characteristic.startNotifications();
@@ -261,4 +271,3 @@
   </script>
 </body>
 </html>
-
