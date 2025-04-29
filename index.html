@@ -1,5 +1,6 @@
+
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -56,7 +57,17 @@
       margin-top: 0.5rem;
       font-weight: bold;
     }
-
+    #latency-display {
+      position: fixed;
+      top: 10px;
+      right: 10px;
+      background: #000;
+      color: #0f0;
+      padding: 10px;
+      border-radius: 5px;
+      border: 1px solid #0f0;
+      font-size: 14px;
+    }
     /* Mobile scaling */
     @media (max-width: 600px) {
       #grid {
@@ -72,6 +83,8 @@
   </style>
 </head>
 <body>
+  <div id="latency-display">Latency: -- ms</div>
+
   <div id="screen-landing" class="screen active">
     <h1>Workout Therapy</h1>
     <button onclick="goToScreen('select')">Start</button>
@@ -157,8 +170,22 @@
     }
 
     function handleBLEStream(event) {
+      const now = Date.now();
       const value = new TextDecoder().decode(event.target.value);
-      if (value.trim() !== '') log(value.trim());
+
+      if (value.trim() !== '') {
+        const parts = value.split('|');
+        if (parts.length >= 2) {
+          const espMillis = parseInt(parts[0]);
+          const message = parts.slice(1).join('|'); // in case message itself has '|'
+          const transmissionLatency = now - espMillis;
+          document.getElementById('latency-display').textContent = 'Latency: ' + transmissionLatency + ' ms';
+
+          log(message.trim());
+        } else {
+          log(value.trim()); // fallback if no timestamp
+        }
+      }
     }
 
     function handleMessage(msg) {
@@ -228,9 +255,10 @@
         await characteristic.writeValue(new TextEncoder().encode('ROUTINE:' + routineIndex));
         goToScreen('workout');
       } else {
-        alert(" Please connect to BLE first.");
+        alert("Please connect to BLE first.");
       }
     }
   </script>
 </body>
 </html>
+
