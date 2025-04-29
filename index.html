@@ -123,7 +123,8 @@
     let device = null;
     let tiles = [];
     let currentStep = null;
-    let espStartTimeOffset = null;
+
+    let espSync = { browser: null, espBase: null };
 
     function goToScreen(name) {
       SCREENS.forEach(s => {
@@ -182,12 +183,15 @@
           const espMillis = parseInt(parts[0]);
           const message = parts.slice(1).join('|').trim();
 
-          // Only update latency if it's a press message
+          // Only update latency for press events
           if (message.includes('PRESSED CORRECTLY') || message.includes('INCORRECT PRESS')) {
-            if (espStartTimeOffset !== null) {
-              const latency = now - (espMillis + espStartTimeOffset);
-              document.getElementById('latency-display').textContent = 'Latency: ' + latency + ' ms';
+            if (espSync.espBase === null) {
+              espSync.espBase = espMillis;
             }
+
+            const alignedESPTime = espMillis - espSync.espBase + espSync.browser;
+            const latency = now - alignedESPTime;
+            document.getElementById('latency-display').textContent = 'Latency: ' + latency + ' ms';
           }
 
           log(message);
@@ -246,7 +250,8 @@
         device.addEventListener('gattserverdisconnected', onDisconnected);
         log('🔗 Connecting...');
         const server = await device.gatt.connect();
-        espStartTimeOffset = Date.now();
+        espSync.browser = Date.now();
+        espSync.espBase = null;
         const service = await server.getPrimaryService(SERVICE_UUID);
         characteristic = await service.getCharacteristic(CHARACTERISTIC_UUID);
         await characteristic.startNotifications();
@@ -254,7 +259,7 @@
         document.getElementById("ble-status").innerText = '🟢 Connected';
         log('✅ Connected. Waiting for logs...');
       } catch (error) {
-        log(' Error: ' + error);
+        log('Error: ' + error);
         document.getElementById("ble-status").innerText = '🔴 Failed to Connect';
       }
     }
